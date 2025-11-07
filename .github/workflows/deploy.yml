@@ -1,0 +1,57 @@
+# This workflow is designed to build and deploy a Next.js application to Google Cloud Run.
+# It uses Google's recommended Workload Identity Federation for secure authentication.
+
+name: Build and Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE_NAME: 'stellar-sails-landing' # Updated to match AC-CI-CloudRunServiceRef-001
+  REGION: 'us-central1'
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+      
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: gcr.io/${{ github.repository_owner }}/stellar-sails:${{ github.sha }} # Updated to match AC-CI-ImageTag-001
+          build-args: |
+            NEXT_PUBLIC_EXAMPLE_VAR=value
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: stellar-sails-landing # Updated to match AC-CI-CloudRunServiceRef-001
+          region: ${{ env.REGION }}
+          image: gcr.io/${{ github.repository_owner }}/stellar-sails:${{ github.sha }} # Updated to match AC-CI-ImageTag-001
+          allow_unauthenticated: true
